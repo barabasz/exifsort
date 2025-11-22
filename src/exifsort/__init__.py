@@ -7,7 +7,7 @@ based on their EXIF metadata.
 
 __all__ = ["ExifSort"]
 __version__ = "0.2.0"
-__date__ = "2025-01-22"
+__date__ = "2025-01-23"
 __author__ = "barabasz"
 __license__ = "MIT"
 __copyright__ = "2025, barabasz"

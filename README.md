@@ -17,7 +17,6 @@ pip install exifsort
 - Python 3.13+
 - ExifTool command-line tool
 - PyExifTool Python library
-- ParseArgs Python library
 
 ## License
 

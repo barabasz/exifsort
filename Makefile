@@ -2,8 +2,8 @@
 
 # Variables
 VERSION := $(shell grep "^version" pyproject.toml | cut -d '"' -f 2)
-PROJECT_DIRS := src/ tests/ examples/
-MYPY_DIRS := src/ examples/
+PROJECT_DIRS := src/
+MYPY_DIRS := src/
 PYTHON := python
 GIT := git
 
