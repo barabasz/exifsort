@@ -1,102 +1,76 @@
 import datetime
 import os
 import time
+import tomllib
 from dataclasses import dataclass, field
-from importlib.metadata import PackageNotFoundError, metadata, version
+from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 
-def _get_pkg_metadata() -> tuple[str, str, str]:
+@lru_cache(maxsize=1)
+def _get_pyproject_data() -> dict[str, Any]:
     """
-    Parse version and date from package version string (PEP 440 local version).
-    Returns: (clean_version, date_str, full_version)
-    Example: '0.2.3+20251123' -> ('0.2.3', '2025-11-23', '0.2.3+20251123')
+    Load data from pyproject.toml located in the project root.
+    Cached to prevent multiple file reads.
+    Assumes structure: project_root/src/exifsort/models.py
     """
     try:
-        full_version = version("exifsort")
-    except PackageNotFoundError:
-        return "0.0.0-dev", "", "0.0.0-dev"
+        # Navigate up from src/exifsort/models.py to project root
+        pyproject_path = Path(__file__).parents[2] / "pyproject.toml"
 
-    clean_ver = full_version
-    date_str = ""
+        if not pyproject_path.is_file():
+            return {}
 
-    if "+" in full_version:
-        ver_part, build_part = full_version.split("+", 1)
-        clean_ver = ver_part
-        if len(build_part) == 8 and build_part.isdigit():
-            date_str = f"{build_part[:4]}-{build_part[4:6]}-{build_part[6:]}"
-        else:
-            date_str = build_part
-
-    return clean_ver, date_str, full_version
+        with open(pyproject_path, "rb") as f:
+            return tomllib.load(f)
+    except Exception:
+        return {}
 
 
 def _get_script_version() -> str:
-    return _get_pkg_metadata()[0]
+    """Get version directly from pyproject.toml [project] section."""
+    data = _get_pyproject_data()
+    return str(data.get("project", {}).get("version", "0.0.0"))
 
 
 def _get_script_date() -> str:
-    return _get_pkg_metadata()[1]
-
-
-def _get_script_version_full() -> str:
-    return _get_pkg_metadata()[2]
+    """Get date directly from pyproject.toml [tool.exifsort] section."""
+    data = _get_pyproject_data()
+    return str(data.get("tool", {}).get("exifsort", {}).get("date", ""))
 
 
 def _get_script_repo() -> str:
-    """Extract 'Repository' URL from Project-URL metadata."""
-    try:
-        urls = metadata("exifsort").get_all("Project-URL")
-        if not urls:
-            return ""
-        for url_def in urls:
-            if "," in url_def:
-                label, url = url_def.split(",", 1)
-                if label.strip().lower() == "repository":
-                    # Rzutowanie na str dla bezpieczeństwa typów
-                    return str(url.strip())
-        return ""
-    except PackageNotFoundError:
-        return ""
+    """Get repository URL from [project.urls]."""
+    data = _get_pyproject_data()
+    return str(data.get("project", {}).get("urls", {}).get("Repository", ""))
 
 
 def _get_script_name() -> str:
-    try:
-        val = metadata("exifsort").get("Name")
-        return str(val) if val else "exifsort"
-    except PackageNotFoundError:
-        return "exifsort"
+    """Get project name from [project]."""
+    data = _get_pyproject_data()
+    return str(data.get("project", {}).get("name", "exifsort"))
 
 
 def _get_script_author() -> str:
-    """Get author name, preferring 'Author' field, falling back to 'Author-email'."""
-    try:
-        meta = metadata("exifsort")
-        author = meta.get("Author")
-        if author:
-            return str(author)
-        author_email = meta.get("Author-email")
-        if author_email:
-            val = str(author_email)
-            if "<" in val:
-                return val.split("<")[0].strip()
-            return val
-        return ""
-    except PackageNotFoundError:
-        return ""
+    """Get first author name from [project.authors]."""
+    data = _get_pyproject_data()
+    # Structure: authors = [ { name = "...", email = "..." } ]
+    authors = data.get("project", {}).get("authors", [])
+    if isinstance(authors, list) and len(authors) > 0:
+        return str(authors[0].get("name", ""))
+    return ""
 
 
 def _get_script_license() -> str:
-    """Get license info, supporting both legacy 'License' and new 'License-Expression'."""
-    try:
-        meta = metadata("exifsort")
-        lic_expr = meta.get("License-Expression")
-        if lic_expr:
-            return str(lic_expr)
-        val = meta.get("License")
-        return str(val) if val else ""
-    except PackageNotFoundError:
-        return ""
+    """Get license identifier from [project]."""
+    data = _get_pyproject_data()
+    # New format: license = "MIT" (string)
+    # Old format: license = { text = "MIT" } (dict)
+    lic = data.get("project", {}).get("license", "")
+    if isinstance(lic, dict):
+        return str(lic.get("text", ""))
+    return str(lic)
 
 
 @dataclass
@@ -125,19 +99,15 @@ class AppConfig:
     """Application configuration with default values."""
 
     # Settings
-    extensions: list[str] = field(
-        default_factory=lambda: ["jpg", "jpeg", "dng", "mov", "mp4", "orf", "ori", "raw"]
-    )
+    extensions: tuple[str, ...] = ("jpg", "jpeg", "dng", "mov", "mp4", "orf", "ori", "raw")
     change_extensions: dict[str, str] = field(
         default_factory=lambda: {"jpeg": "jpg", "tiff": "tif"}
     )
-    exif_date_tags: list[str] = field(
-        default_factory=lambda: [
-            "EXIF:DateTimeOriginal",
-            "EXIF:CreateDate",
-            "XMP:CreateDate",
-            "QuickTime:CreateDate",
-        ]
+    exif_date_tags: tuple[str, ...] = (
+        "EXIF:DateTimeOriginal",
+        "EXIF:CreateDate",
+        "XMP:CreateDate",
+        "QuickTime:CreateDate",
     )
 
     # Templates & Formatting
@@ -168,7 +138,6 @@ class AppConfig:
     # Runtime metadata
     script_name: str = field(default_factory=_get_script_name)
     script_version: str = field(default_factory=_get_script_version)
-    script_version_full: str = field(default_factory=_get_script_version_full)
     script_date: str = field(default_factory=_get_script_date)
     script_author: str = field(default_factory=_get_script_author)
     script_repo: str = field(default_factory=_get_script_repo)

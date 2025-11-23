@@ -2,9 +2,13 @@
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.exifsort]
+author = "barabasz"
+date = "2025-11-24"
+
 [project]
-name = "exifsort"
-version = "0.2.3+20251123"
+name = "ExifSort"
+version = "0.2.3"
 description = "ExifSort - sort media files into date-based folders by reading EXIF creation date."
 readme = "README.md"
 authors = [

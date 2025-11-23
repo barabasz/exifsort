@@ -206,7 +206,7 @@ def get_config() -> AppConfig:
     args = parser.parse_args()
 
     # Process extensions (remove dots, lowercase)
-    extensions = [ext.lower().lstrip(".") for ext in args.extensions]
+    extensions = tuple(ext.lower().lstrip(".") for ext in args.extensions)
 
     # Determine directory writable status
     source_dir = Path(args.directory).resolve()

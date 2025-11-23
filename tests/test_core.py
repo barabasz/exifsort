@@ -28,7 +28,7 @@ def base_config(tmp_path: Path) -> AppConfig:
 
 def test_config_initialization(base_config):
     """Ensure configuration initializes with expected default values."""
-    assert base_config.script_name == "exifsort"
+    assert base_config.script_name == "ExifSort"
     assert "jpg" in base_config.extensions
     assert base_config.file_template == "YYYYMMDD-HHMMSS"
 
