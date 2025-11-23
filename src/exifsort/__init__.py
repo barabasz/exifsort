@@ -5,10 +5,6 @@ ExifSort is a modern Python library for managing media file organization
 based on their EXIF metadata.
 """
 
+from .core import main
+
 __all__ = ["main"]
-__version__ = "0.2.2"
-__date__ = "2025-01-23"
-__author__ = "barabasz"
-__license__ = "MIT"
-__copyright__ = "2025, barabasz"
-__url__ = "https://github.com/barabasz/exifsort"

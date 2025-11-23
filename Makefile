@@ -31,12 +31,14 @@ help:
 	@echo ""
 	@echo "$(GREEN)Development:$(NC)"
 	@echo "  make dev-install  - Install package in development mode with all dependencies"
+	@echo "  make check        - Run all checks (format, lint, typecheck, test-quick)"
 	@echo "  make check-tools  - Check and install missing development tools"
 	@echo "  make format       - Format code with Black"
 	@echo "  make lint         - Run Ruff linter"
 	@echo "  make lint-fix     - Run Ruff linter with auto-fix"
 	@echo "  make typecheck    - Run mypy type checker"
 	@echo "  make test         - Run pytest with coverage"
+	@echo "  make test-quick   - Run pytest quietly without coverage (faster)"
 	@echo ""
 	@echo "$(GREEN)Build & Release:$(NC)"
 	@echo "  make clean        - Clean build artifacts"
@@ -54,6 +56,9 @@ help:
 
 version:
 	@echo "$(GREEN)Current version: $(VERSION)$(NC)"
+
+check: check-tools format lint typecheck test-quick
+	@echo "$(GREEN)✅ All checks passed$(NC)"
 
 check-tools:
 	@$(CHECK_ECHO) "$(BLUE)🔧 Checking development tools...$(NC)"
@@ -118,6 +123,11 @@ test: check-tools
 	@echo "$(BLUE)🧪 Running tests with coverage...$(NC)"
 	pytest tests/ -v --cov=src/exifsort --cov-report=term-missing
 	@echo "$(GREEN)✅ Tests complete$(NC)"
+
+test-quick: check-tools
+	@echo "$(BLUE)🧪 Running quick tests...$(NC)"
+	pytest tests/ -q --no-header --no-summary
+	@echo "$(GREEN)✅ Quick tests complete$(NC)"
 
 clean:
 	@echo "$(BLUE)🧹 Cleaning build artifacts...$(NC)"
