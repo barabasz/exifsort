@@ -116,7 +116,7 @@ typecheck: check-tools
 
 test: check-tools
 	@echo "$(BLUE)🧪 Running tests with coverage...$(NC)"
-	pytest tests/ -v --cov=src/tyconf --cov-report=term-missing
+	pytest tests/ -v --cov=src/exifsort --cov-report=term-missing
 	@echo "$(GREEN)✅ Tests complete$(NC)"
 
 clean:

@@ -15,14 +15,6 @@ from tyconf import TyConf
 from exifsort import __date__, __version__
 from exifsort.models import Colors, FileItem
 
-# Check if ExifTool command-line tool is available (binary check)
-try:
-    subprocess.run(["exiftool", "-ver"], capture_output=True, check=True)
-except (subprocess.SubprocessError, FileNotFoundError):
-    print("\033[0;31mExifTool command-line tool is not installed or not in PATH.\033[0m")
-    print("Please download and install it from: \033[0;36mhttps://exiftool.org/\033[0m")
-    sys.exit(1)
-
 # Global config instance (initialized in main)
 cfg: TyConf | None = None
 start_time: float = 0.0
@@ -276,6 +268,13 @@ def printe(message: str, exit_code: int = 1) -> None:
 
 
 def check_conditions() -> None:
+    # Check if ExifTool command-line tool is available (binary check)
+    try:
+        subprocess.run(["exiftool", "-ver"], capture_output=True, check=True)
+    except (subprocess.SubprocessError, FileNotFoundError):
+        print("\033[0;31mExifTool command-line tool is not installed or not in PATH.\033[0m")
+        print("Please download and install it from: \033[0;36mhttps://exiftool.org/\033[0m")
+        sys.exit(1)
     if cfg.show_version:
         msg = f"{colorize(cfg.script_name, colors.green)} version {colorize(cfg.script_version, colors.cyan)} ({cfg.script_date}) by {colorize(cfg.script_author, colors.cyan)}"
         printe(msg, 0)
