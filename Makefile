@@ -1,7 +1,7 @@
 .PHONY: help lint lint-fix format test typecheck clean build check-dist publish git-tag release version dev-install check-tools
 
 # Variables
-VERSION := $(shell grep "^version" pyproject.toml | cut -d '"' -f 2)
+VERSION := $(shell sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"+]*\).*/\1/p' pyproject.toml)
 PROJECT_DIRS := src/
 MYPY_DIRS := src/
 PYTHON := python
