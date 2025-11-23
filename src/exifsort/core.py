@@ -11,7 +11,9 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
 from tyconf import TyConf
+
 from exifsort import __date__, __version__
 from exifsort.models import Colors, FileItem
 
