@@ -2,6 +2,7 @@ import datetime
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import exiftool
 from tyconf import TyConf
@@ -38,6 +39,7 @@ class FileItem:
         self.error = ""
         self.metadata = None
         self.is_valid = True
+        self.subdir: str | None = None
 
         # Validate file
         if not self._validate_file():
@@ -118,7 +120,8 @@ class FileItem:
             return None
 
         if self.exif_date is None:
-            return self.cfg.fallback_folder
+            # Rzutujemy na str, bo TyConf zwraca Any, a mypy wymaga konkretnego typu
+            return cast(str, self.cfg.fallback_folder)
 
         # Parse time_day_starts
         h, m, s = map(int, self.cfg.time_day_starts.split(":"))
@@ -195,12 +198,19 @@ class FileItem:
 
     def get_new_path(self) -> Path:
         """Get new absolute path for the file based on settings."""
+        # Rzutujemy source_dir na Path dla pewności typów
+        source_dir = cast(Path, self.cfg.source_dir)
+
         if self.cfg.use_subdirs:
-            return (self.cfg.source_dir / self.subdir / self.name_new).absolute()
+            # Tu jest kluczowa zmiana: rzutujemy self.subdir na str
+            subdir = cast(str, self.subdir)
+            return (source_dir / subdir / self.name_new).absolute()
         else:
-            return (self.cfg.source_dir / self.name_new).absolute()
+            return (source_dir / self.name_new).absolute()
 
     def get_new_extension(self) -> str:
         """Get new file extension based on change_extensions mapping."""
         ext = self.ext_old.lower() if self.cfg.normalize_ext else self.ext_old
-        return self.cfg.change_extensions.get(ext, ext)
+        # Rzutujemy na słownik stringów
+        change_map = cast(dict[str, str], self.cfg.change_extensions)
+        return change_map.get(ext, ext)

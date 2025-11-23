@@ -11,21 +11,29 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any, cast
 
 from tyconf import TyConf
 
 from exifsort import __date__, __version__
 from exifsort.models import Colors, FileItem
 
-# Global config instance (initialized in main)
-cfg: TyConf | None = None
-start_time: float = 0.0
+# Check if ExifTool command-line tool is available (binary check)
+try:
+    subprocess.run(["exiftool", "-ver"], capture_output=True, check=True)
+except (subprocess.SubprocessError, FileNotFoundError):
+    print("\033[0;31mExifTool command-line tool is not installed or not in PATH.\033[0m")
+    print("Please download and install it from: \033[0;36mhttps://exiftool.org/\033[0m")
+    sys.exit(1)
+
+# Global constant (stateless)
 colors = Colors()
 
 
 def init_config() -> TyConf:
     return TyConf(
-        script_name=(str, "exifsort", True),  # Poprawiłem nazwę skryptu na exifsort
+        start_time=(float, time.time(), True),
+        script_name=(str, "exifsort", True),
         script_version=(str, __version__, True),
         script_date=(str, __date__, True),
         script_author=(str, "github.com/barabasz", True),
@@ -70,18 +78,21 @@ def get_status(value: bool) -> str:
     return colorize("ON", colors.green) if value else colorize("OFF", colors.red)
 
 
-def print_progress(item: int, total: int, message: str, show_percentage: bool = True) -> None:
+def print_progress(
+    item: int, total: int, message: str, cfg: TyConf, show_percentage: bool = True
+) -> None:
+    indent = cast(str, cfg.indent)
+    terminal_clear = cast(str, cfg.terminal_clear)
+
     if show_percentage:
         percentage = (item / total) * 100 if total > 0 else 0
-        msg = (
-            f"{cfg.terminal_clear}{cfg.indent}File {item} of {total}: {message} ({percentage:.0f}%)"
-        )
+        msg = f"{terminal_clear}{indent}File {item} of {total}: {message} ({percentage:.0f}%)"
     else:
-        msg = f"{cfg.terminal_clear}{cfg.indent}File {item} of {total}: {message}"
+        msg = f"{terminal_clear}{indent}File {item} of {total}: {message}"
     print(msg, end="", flush=True)
 
 
-def update_config_from_args(args) -> None:
+def update_config_from_args(args: argparse.Namespace, cfg: TyConf) -> None:
     special_handling = {"directory", "_skip_fallback"}
     for arg_name, arg_value in vars(args).items():
         if arg_name in special_handling:
@@ -96,23 +107,33 @@ def update_config_from_args(args) -> None:
     cfg.source_dir_writable = os.access(cfg.source_dir, os.W_OK)
 
 
-def parse_args() -> None:
+def parse_args(cfg: TyConf) -> None:
+    # Casting types for mypy
+    script_name = cast(str, cfg.script_name)
+    directory_template = cast(str, cfg.directory_template)
+    extensions = cast(list[str], cfg.extensions)
+    file_template = cast(str, cfg.file_template)
+    interfix = cast(str, cfg.interfix)
+    time_day_starts = cast(str, cfg.time_day_starts)
+    fallback_folder = cast(str, cfg.fallback_folder)
+    offset = cast(int, cfg.offset)
+
     parser = argparse.ArgumentParser(
-        prog=cfg.script_name,
+        prog=script_name,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Organize media files into date-based folders by reading EXIF creation date.\n"
         f"Requires {colorize('ExifTool', colors.green)} command-line tool and {colorize('PyExifTool', colors.green)} Python library.\n"
-        f"Default schema: {get_schema()}",
-        epilog=f"Example: {colorize(cfg.script_name, colors.green)} -o 3600 --fallback-folder UNSORTED",
+        f"Default schema: {get_schema(cfg)}",
+        epilog=f"Example: {colorize(script_name, colors.green)} -o 3600 --fallback-folder UNSORTED",
     )
     parser.add_argument(
         "-d",
         "--directory-template",
         dest="directory_template",
         type=str,
-        default=cfg.directory_template,
+        default=directory_template,
         metavar="TEMPLATE",
-        help=f"Template for directory names (default: '{colorize(cfg.directory_template, colors.yellow)}')",
+        help=f"Template for directory names (default: '{colorize(directory_template, colors.yellow)}')",
     )
     parser.add_argument(
         "-D",
@@ -127,9 +148,9 @@ def parse_args() -> None:
         dest="extensions",
         type=str,
         nargs="+",
-        default=cfg.extensions,
+        default=extensions,
         metavar="EXT",
-        help=f"List of file extensions to process (default: '{colorize(', '.join(cfg.extensions), colors.yellow)}')",
+        help=f"List of file extensions to process (default: '{colorize(', '.join(extensions), colors.yellow)}')",
     )
     parser.add_argument(
         "-E",
@@ -143,16 +164,16 @@ def parse_args() -> None:
         "--file-template",
         dest="file_template",
         type=str,
-        default=cfg.file_template,
+        default=file_template,
         metavar="TEMPLATE",
-        help=f"Template for file names (default: '{colorize(cfg.file_template, colors.yellow)}')",
+        help=f"Template for file names (default: '{colorize(file_template, colors.yellow)}')",
     )
     parser.add_argument(
         "-i",
         "--interfix",
         dest="interfix",
         type=str,
-        default=cfg.interfix,
+        default=interfix,
         metavar="TEXT",
         help="Text to insert between timestamp prefix and original filename",
     )
@@ -161,9 +182,9 @@ def parse_args() -> None:
         "--new-day",
         dest="time_day_starts",
         type=str,
-        default=cfg.time_day_starts,
+        default=time_day_starts,
         metavar="HH:MM:SS",
-        help=f"Time when the new day starts (default: '{colorize(cfg.time_day_starts, colors.yellow)}')",
+        help=f"Time when the new day starts (default: '{colorize(time_day_starts, colors.yellow)}')",
     )
     parser.add_argument(
         "-N",
@@ -177,16 +198,16 @@ def parse_args() -> None:
         "--fallback-folder",
         dest="fallback_folder",
         type=str,
-        default=cfg.fallback_folder,
+        default=fallback_folder,
         metavar="FOLDER",
-        help=f"Folder name for images without EXIF date (default: '{colorize(cfg.fallback_folder, colors.yellow)}')",
+        help=f"Folder name for images without EXIF date (default: '{colorize(fallback_folder, colors.yellow)}')",
     )
     parser.add_argument(
         "-o",
         "--offset",
         dest="offset",
         type=int,
-        default=cfg.offset,
+        default=offset,
         metavar="SECONDS",
         help="Time offset in seconds to apply to EXIF dates",
     )
@@ -260,7 +281,7 @@ def parse_args() -> None:
         help="Directory to organize (default: current working directory)",
     )
     args = parser.parse_args()
-    update_config_from_args(args)
+    update_config_from_args(args, cfg)
 
 
 def printe(message: str, exit_code: int = 1) -> None:
@@ -269,52 +290,58 @@ def printe(message: str, exit_code: int = 1) -> None:
     sys.exit(exit_code)
 
 
-def check_conditions() -> None:
-    # Check if ExifTool command-line tool is available (binary check)
-    try:
-        subprocess.run(["exiftool", "-ver"], capture_output=True, check=True)
-    except (subprocess.SubprocessError, FileNotFoundError):
-        print("\033[0;31mExifTool command-line tool is not installed or not in PATH.\033[0m")
-        print("Please download and install it from: \033[0;36mhttps://exiftool.org/\033[0m")
-        sys.exit(1)
+def check_conditions(cfg: TyConf) -> None:
+    # Casting for mypy
+    script_name = cast(str, cfg.script_name)
+    script_version = cast(str, cfg.script_version)
+    script_date = cast(str, cfg.script_date)
+    script_author = cast(str, cfg.script_author)
+    source_dir = cast(Path, cfg.source_dir)
+    extensions = cast(list[str], cfg.extensions)
+
     if cfg.show_version:
-        msg = f"{colorize(cfg.script_name, colors.green)} version {colorize(cfg.script_version, colors.cyan)} ({cfg.script_date}) by {colorize(cfg.script_author, colors.cyan)}"
+        msg = f"{colorize(script_name, colors.green)} version {colorize(script_version, colors.cyan)} ({script_date}) by {colorize(script_author, colors.cyan)}"
         printe(msg, 0)
-    if not cfg.source_dir.is_dir():
+    if not source_dir.is_dir():
         printe(
-            f"The specified directory '{colorize(str(cfg.source_dir), colors.cyan)}' does not exist or is not a directory.",
+            f"The specified directory '{colorize(str(source_dir), colors.cyan)}' does not exist or is not a directory.",
             1,
         )
     if not cfg.source_dir_writable:
         printe(
-            f"The specified directory '{colorize(str(cfg.source_dir), colors.cyan)}' is not writable.",
+            f"The specified directory '{colorize(str(source_dir), colors.cyan)}' is not writable.",
             1,
         )
-    if not cfg.extensions or all(ext.strip() == "" for ext in cfg.extensions):
+    if not extensions or all(ext.strip() == "" for ext in extensions):
         printe("At least one file extension must be specified.", 1)
     if cfg.quiet and cfg.verbose:
         printe("Cannot use both quiet mode and verbose mode.", 1)
 
 
-def get_schema() -> str:
+def get_schema(cfg: TyConf) -> str:
     file_org = "FileName.Ext"
     arrow = colorize("→", colors.yellow)
-    folder = colorize(cfg.directory_template, colors.cyan)
+    directory_template = cast(str, cfg.directory_template)
+    folder = colorize(directory_template, colors.cyan)
     folder = f"{folder}/" if cfg.use_subdirs else ""
-    prefix = colorize(cfg.file_template, colors.cyan)
+    file_template = cast(str, cfg.file_template)
+    prefix = colorize(file_template, colors.cyan)
     file_new = file_org.lower() if cfg.normalize_ext else file_org
     if cfg.use_prefix:
-        sep = f"-{cfg.interfix}-" if cfg.interfix else "-"
+        interfix = cast(str, cfg.interfix)
+        sep = f"-{interfix}-" if interfix else "-"
         file_new = f"{prefix}{sep}{file_new}"
     return f"{file_org} {arrow} {folder}{file_new}"
 
 
-def print_schema() -> None:
+def print_schema(cfg: TyConf) -> None:
+    indent = cast(str, cfg.indent)
     print(f"{colorize('Schema:', colors.yellow)}")
-    print(f"{cfg.indent}{get_schema()}")
+    print(f"{indent}{get_schema(cfg)}")
 
 
-def print_settings() -> None:
+def print_settings(cfg: TyConf) -> None:
+    indent = cast(str, cfg.indent)
     print(f"{colorize('RAW Settings:', colors.yellow)}")
     settings = {
         "change_extensions": cfg.change_extensions,
@@ -342,71 +369,82 @@ def print_settings() -> None:
         "yes": cfg.yes,
     }
     for key, value in settings.items():
-        print(f"{cfg.indent}{key}: {colorize(str(value), colors.cyan)}")
+        print(f"{indent}{key}: {colorize(str(value), colors.cyan)}")
 
 
-def print_header() -> None:
-    global start_time
-    start_time = time.time()
+def print_header(cfg: TyConf) -> None:
+    script_name = cast(str, cfg.script_name)
+    script_version = cast(str, cfg.script_version)
+    indent = cast(str, cfg.indent)
+    extensions = cast(list[str], cfg.extensions)
+    directory_template = cast(str, cfg.directory_template)
+    time_day_starts = cast(str, cfg.time_day_starts)
+    file_template = cast(str, cfg.file_template)
+    fallback_folder = cast(str, cfg.fallback_folder)
+    interfix = cast(str, cfg.interfix)
+
     print(
-        f"{colorize('Media Organizer Script', colors.green)} ({colorize(cfg.script_name, colors.green)}) v{cfg.script_version}"
+        f"{colorize('Media Organizer Script', colors.green)} ({colorize(script_name, colors.green)}) v{script_version}"
     )
     if cfg.show_settings and not cfg.quiet:
-        print_settings()
-    print_schema()
+        print_settings(cfg)
+    print_schema(cfg)
     if cfg.quiet:
         return
     print(f"{colorize('Settings:', colors.yellow)}")
     if cfg.verbose:
-        print(f"{cfg.indent}Verbose mode: {get_status(cfg.verbose)}")
+        print(f"{indent}Verbose mode: {get_status(bool(cfg.verbose))}")
     if cfg.test or cfg.verbose:
-        print(f"{cfg.indent}Test mode: {get_status(cfg.test)}")
-    if cfg.extensions:
-        print(f"{cfg.indent}Include extensions: {colorize(', '.join(cfg.extensions), colors.cyan)}")
+        print(f"{indent}Test mode: {get_status(bool(cfg.test))}")
+    if extensions:
+        print(f"{indent}Include extensions: {colorize(', '.join(extensions), colors.cyan)}")
     if cfg.verbose or not cfg.use_subdirs:
-        print(f"{cfg.indent}Process to subdirectories: {get_status(cfg.use_subdirs)}")
+        print(f"{indent}Process to subdirectories: {get_status(bool(cfg.use_subdirs))}")
     if cfg.use_subdirs:
-        print(f"{cfg.indent}Subfolder template: {colorize(cfg.directory_template, colors.cyan)}")
-    if cfg.verbose or cfg.time_day_starts != "00:00:00":
-        print(f"{cfg.indent}Day starts time set to: {colorize(cfg.time_day_starts, colors.cyan)}")
+        print(f"{indent}Subfolder template: {colorize(directory_template, colors.cyan)}")
+    if cfg.verbose or time_day_starts != "00:00:00":
+        print(f"{indent}Day starts time set to: {colorize(time_day_starts, colors.cyan)}")
     if cfg.verbose or cfg.overwrite:
-        print(f"{cfg.indent}Overwrite existing files: {get_status(cfg.overwrite)}")
+        print(f"{indent}Overwrite existing files: {get_status(bool(cfg.overwrite))}")
     if cfg.verbose or not cfg.normalize_ext:
-        print(f"{cfg.indent}Normalize extensions: {get_status(cfg.normalize_ext)}")
+        print(f"{indent}Normalize extensions: {get_status(bool(cfg.normalize_ext))}")
     if cfg.verbose or not cfg.use_prefix:
-        print(f"{cfg.indent}Add prefix to filenames: {get_status(cfg.use_prefix)}")
+        print(f"{indent}Add prefix to filenames: {get_status(bool(cfg.use_prefix))}")
     if cfg.verbose or cfg.use_prefix:
-        print(f"{cfg.indent}Prefix format: {colorize(cfg.file_template, colors.cyan)}")
+        print(f"{indent}Prefix format: {colorize(file_template, colors.cyan)}")
     if cfg.verbose or not cfg.use_fallback_folder:
-        print(f"{cfg.indent}Use fallback folder: {get_status(cfg.use_fallback_folder)}")
+        print(f"{indent}Use fallback folder: {get_status(bool(cfg.use_fallback_folder))}")
     if cfg.use_fallback_folder:
-        print(f"{cfg.indent}Fallback folder name: {colorize(cfg.fallback_folder, colors.cyan)}")
+        print(f"{indent}Fallback folder name: {colorize(fallback_folder, colors.cyan)}")
     if cfg.verbose or cfg.offset != 0:
-        print(f"{cfg.indent}Time offset: {colorize(f'{cfg.offset} seconds', colors.cyan)}")
-    if cfg.interfix or cfg.verbose:
-        print(f"{cfg.indent}Interfix: {colorize(cfg.interfix, colors.cyan)}")
+        print(f"{indent}Time offset: {colorize(f'{cfg.offset} seconds', colors.cyan)}")
+    if interfix or cfg.verbose:
+        print(f"{indent}Interfix: {colorize(interfix, colors.cyan)}")
 
 
-def get_elapsed_time() -> tuple[str, str]:
+def get_elapsed_time(start_time: float) -> tuple[str, str]:
+    """Get elapsed time since script start."""
     elapsed_time = (time.time() - start_time) * 1000
     time_factor = "ms" if elapsed_time < 1000 else "s"
     elapsed_time = elapsed_time / 1000 if elapsed_time >= 1000 else elapsed_time
     return f"{elapsed_time:.2f}", time_factor
 
 
-def print_footer(folder_info: dict) -> None:
-    time_elapsed, time_factor = get_elapsed_time()
+def print_footer(folder_info: dict[str, Any], cfg: TyConf) -> None:
+    indent = cast(str, cfg.indent)
+    start_time = cast(float, cfg.start_time)
+    time_elapsed, time_factor = get_elapsed_time(start_time)
     print(f"{colorize('Summary:', colors.yellow)}")
     if cfg.test:
-        print(f"{cfg.indent}Test mode (no changes made).")
+        print(f"{indent}Test mode (no changes made).")
     else:
-        print(f"{cfg.indent}Processed files: {len(folder_info['processed_files'])}")
-        print(f"{cfg.indent}Skipped files: {len(folder_info['skipped_files'])}")
-        print(f"{cfg.indent}Directories created: {len(folder_info['created_dirs'])}")
-    print(f"{cfg.indent}Completed in: {colorize(time_elapsed, colors.cyan)} {time_factor}.")
+        print(f"{indent}Processed files: {len(folder_info['processed_files'])}")
+        print(f"{indent}Skipped files: {len(folder_info['skipped_files'])}")
+        print(f"{indent}Directories created: {len(folder_info['created_dirs'])}")
+    print(f"{indent}Completed in: {colorize(time_elapsed, colors.cyan)} {time_factor}.")
 
 
-def prompt_user(folder_info: dict[str, int]) -> bool:
+def prompt_user(folder_info: dict[str, Any], cfg: TyConf) -> bool:
     if cfg.yes or cfg.test:
         return True
     file_count = folder_info["valid_files"]
@@ -418,29 +456,35 @@ def prompt_user(folder_info: dict[str, int]) -> bool:
     return False
 
 
-def get_media_objects(file_list: list[Path], folder_info: dict) -> list[FileItem]:
+def get_media_objects(
+    file_list: list[Path], folder_info: dict[str, Any], cfg: TyConf
+) -> list[FileItem]:
     """Convert list of Paths to list of FileItem objects."""
     media_count = folder_info.get("media_count", 0)
+    indent = cast(str, cfg.indent)
+    terminal_clear = cast(str, cfg.terminal_clear)
+    extensions = cast(list[str], cfg.extensions)
 
     print(f"{colorize('Analyzing files:', colors.yellow)}")
 
     # Filter media files by extension
-    media_files = [f for f in file_list if f.suffix.lstrip(".").lower() in cfg.extensions]
+    media_files = [f for f in file_list if f.suffix.lstrip(".").lower() in extensions]
 
     # Process files with progress
     media_objects = []
     for item, file in enumerate(media_files, start=1):
+        # Pass cfg to constructor
         media_item = FileItem(file, cfg)
 
         if cfg.show_files_details and not cfg.quiet:
-            print_file_info(media_item)
+            print_file_info(media_item, cfg)
         else:
-            print_progress(item, media_count, colorize(media_item.name_old, colors.cyan))
+            print_progress(item, media_count, colorize(media_item.name_old, colors.cyan), cfg)
 
         media_objects.append(media_item)
 
     if not cfg.show_files_details:
-        print(f"{cfg.terminal_clear}{cfg.indent}Completed.")
+        print(f"{terminal_clear}{indent}Completed.")
 
     return media_objects
 
@@ -450,17 +494,20 @@ def get_file_list(directory: Path) -> list[Path]:
     return sorted(files, key=lambda x: x.name.lower())
 
 
-def get_folder_info(file_list: list[Path]) -> dict:
-    info = {
-        "path": cfg.source_dir,
-        "created": datetime.datetime.fromtimestamp(cfg.source_dir.stat().st_ctime).strftime(
+def get_folder_info(file_list: list[Path], cfg: TyConf) -> dict[str, Any]:
+    source_dir = cast(Path, cfg.source_dir)
+    extensions = cast(list[str], cfg.extensions)
+
+    info: dict[str, Any] = {
+        "path": source_dir,
+        "created": datetime.datetime.fromtimestamp(source_dir.stat().st_ctime).strftime(
             "%Y-%m-%d %H:%M:%S"
         ),
-        "modified": datetime.datetime.fromtimestamp(cfg.source_dir.stat().st_mtime).strftime(
+        "modified": datetime.datetime.fromtimestamp(source_dir.stat().st_mtime).strftime(
             "%Y-%m-%d %H:%M:%S"
         ),
         "file_count": len(file_list),
-        "media_count": sum(1 for f in file_list if f.suffix.lstrip(".").lower() in cfg.extensions),
+        "media_count": sum(1 for f in file_list if f.suffix.lstrip(".").lower() in extensions),
         "media_types": {},
         "processed_files": [],
         "skipped_files": [],
@@ -468,64 +515,69 @@ def get_folder_info(file_list: list[Path]) -> dict:
     }
     for f in file_list:
         ext = f.suffix.lstrip(".").lower()
-        if ext in cfg.extensions:
+        if ext in extensions:
             info["media_types"][ext] = info["media_types"].get(ext, 0) + 1
     return info
 
 
-def print_folder_info(folder_info: dict) -> None:
+def print_folder_info(folder_info: dict[str, Any], cfg: TyConf) -> None:
+    indent = cast(str, cfg.indent)
+    source_dir = cast(Path, cfg.source_dir)
+
     print(f"{colorize('Folder info:', colors.yellow)}")
-    print(f"{cfg.indent}Path: {colorize(str(cfg.source_dir), colors.cyan)}")
-    print(f"{cfg.indent}Total files: {colorize(str(folder_info['file_count']), colors.cyan)}")
+    print(f"{indent}Path: {colorize(str(source_dir), colors.cyan)}")
+    print(f"{indent}Total files: {colorize(str(folder_info['file_count']), colors.cyan)}")
     if cfg.verbose:
         media_types_str = ", ".join(
             f"{colorize(str(count), colors.cyan)} x {colorize(ext.upper(), colors.cyan)}"
             for ext, count in folder_info["media_types"].items()
         )
         print(
-            f"{cfg.indent}Matching files: {colorize(str(folder_info['media_count']), colors.cyan)} ({media_types_str})"
+            f"{indent}Matching files: {colorize(str(folder_info['media_count']), colors.cyan)} ({media_types_str})"
         )
-        print(f"{cfg.indent}Created: {colorize(folder_info['created'], colors.cyan)}")
-        print(f"{cfg.indent}Modified: {colorize(folder_info['modified'], colors.cyan)}")
+        print(f"{indent}Created: {colorize(folder_info['created'], colors.cyan)}")
+        print(f"{indent}Modified: {colorize(folder_info['modified'], colors.cyan)}")
     else:
-        print(
-            f"{cfg.indent}Matching files: {colorize(str(folder_info['media_count']), colors.cyan)}"
-        )
+        print(f"{indent}Matching files: {colorize(str(folder_info['media_count']), colors.cyan)}")
 
 
-def print_file_errors(files: list[FileItem]) -> None:
+def print_file_errors(files: list[FileItem], cfg: TyConf) -> None:
+    indent = cast(str, cfg.indent)
     invalid = [f for f in files if not f.is_valid]
     if invalid:
         print(f"{colorize('Files not valid:', colors.yellow)}")
         for file in invalid:
             print(
-                f"{cfg.indent}{colorize(file.name_old, colors.cyan)}: {colorize(file.error, colors.red)}"
+                f"{indent}{colorize(file.name_old, colors.cyan)}: {colorize(file.error, colors.red)}"
             )
     errors = [f for f in files if f.is_valid and f.error]
     if errors:
         print(f"{colorize('Files with errors:', colors.yellow)}")
         for file in errors:
             print(
-                f"{cfg.indent}{colorize(file.name_old, colors.cyan)}: {colorize(file.error, colors.red)}"
+                f"{indent}{colorize(file.name_old, colors.cyan)}: {colorize(file.error, colors.red)}"
             )
 
 
-def print_files_info(files: list[FileItem], folder_info: dict) -> None:
+def print_files_info(files: list[FileItem], folder_info: dict[str, Any], cfg: TyConf) -> None:
     total_files = len(files)
     valid_files = sum(1 for f in files if f.is_valid)
     invalid_files = total_files - valid_files
     folder_info["valid_files"] = valid_files
     folder_info["invalid_files"] = invalid_files
+    indent = cast(str, cfg.indent)
+
     if not cfg.quiet:
         print(f"{colorize('Files Summary:', colors.yellow)}")
-        print(f"{cfg.indent}Total files analyzed: {colorize(str(total_files), colors.cyan)}")
-        print(f"{cfg.indent}Valid files: {colorize(str(valid_files), colors.cyan)}")
-        print(f"{cfg.indent}Invalid files: {colorize(str(invalid_files), colors.cyan)}")
+        print(f"{indent}Total files analyzed: {colorize(str(total_files), colors.cyan)}")
+        print(f"{indent}Valid files: {colorize(str(valid_files), colors.cyan)}")
+        print(f"{indent}Invalid files: {colorize(str(invalid_files), colors.cyan)}")
     if (cfg.verbose or cfg.show_errors) and invalid_files > 0:
-        print_file_errors(files)
+        print_file_errors(files, cfg)
 
 
-def print_file_info(file: FileItem) -> None:
+def print_file_info(file: FileItem, cfg: TyConf) -> None:
+    indent = cast(str, cfg.indent)
     print(f"{colorize('File:', colors.yellow)} {colorize(file.name_old, colors.yellow)}")
     for prop, value in file.__dict__.items():
         if prop == "metadata" or prop == "cfg":
@@ -533,44 +585,60 @@ def print_file_info(file: FileItem) -> None:
         if value in (None, "", [], {}):
             continue
         if prop == "error" and value:
-            print(f"{cfg.indent}{prop}: {colorize(value, colors.red)}")
+            print(f"{indent}{prop}: {colorize(value, colors.red)}")
         elif prop == "is_valid" and not value:
-            print(f"{cfg.indent}{prop}: {colorize(str(value), colors.red)}")
+            print(f"{indent}{prop}: {colorize(str(value), colors.red)}")
         else:
-            print(f"{cfg.indent}{prop}: {colorize(str(value), colors.cyan)}")
+            print(f"{indent}{prop}: {colorize(str(value), colors.cyan)}")
 
 
-def print_process_file(file: FileItem, item: int, total_items: int) -> None:
+def print_process_file(file: FileItem, item: int, total_items: int, cfg: TyConf) -> None:
+    indent = cast(str, cfg.indent)
     if cfg.verbose:
         old = colorize(f"{file.name_old:<13}", colors.cyan)
         arr = colorize("→", colors.yellow)
-        sub = f"{colorize(file.subdir, colors.cyan)}/" if cfg.use_subdirs else ""
+
+        if cfg.use_subdirs:
+            subdir = cast(str, file.subdir)
+            sub = f"{colorize(subdir, colors.cyan)}/"
+        else:
+            sub = ""
+
         new = colorize(file.name_new, colors.cyan)
         exf_color = colors.cyan if file.exif_date else colors.red
         exf = file.exif_date if file.exif_date else "EXIF data not found"
-        print(f"{cfg.indent}{old} ({colorize(str(exf), exf_color)}) {arr} {sub}{new}")
+        print(f"{indent}{old} ({colorize(str(exf), exf_color)}) {arr} {sub}{new}")
     else:
-        print_progress(item, total_items, colorize(file.name_old, colors.cyan))
+        print_progress(item, total_items, colorize(file.name_old, colors.cyan), cfg)
 
 
-def process_files(media_list: list[FileItem], folder_info: dict) -> None:
+def process_files(media_list: list[FileItem], folder_info: dict[str, Any], cfg: TyConf) -> None:
     processed_files = []
     skipped_files = []
     created_dirs = []
     total_items = folder_info["valid_files"]
     action = "Moving" if cfg.use_subdirs else "Renaming"
+    indent = cast(str, cfg.indent)
+    terminal_clear = cast(str, cfg.terminal_clear)
+    source_dir = cast(Path, cfg.source_dir)
+
     print(f"{colorize(f'{action} files:', colors.yellow)}")
 
     for item, file in enumerate((f for f in media_list if f.is_valid), start=1):
         if cfg.use_subdirs:
-            target_dir = cfg.source_dir / file.subdir
+            # Cast subdir to str to satisfy mypy
+            subdir = cast(str, file.subdir)
+            target_dir = source_dir / subdir
+
             if not target_dir.exists() and not cfg.test:
                 target_dir.mkdir(parents=True, exist_ok=True)
                 created_dirs.append(file.subdir)
+
         if file.path_new.exists() and not cfg.overwrite:
             file.error = "Target file already exists."
             skipped_files.append(file.name_old)
             continue
+
         if not cfg.test:
             try:
                 file.path_old.rename(file.path_new)
@@ -578,39 +646,56 @@ def process_files(media_list: list[FileItem], folder_info: dict) -> None:
                 file.error = f"Error moving file: {str(e)}"
                 skipped_files.append(file.name_old)
                 continue
-        print_process_file(file, item, total_items)
+
+        print_process_file(file, item, total_items, cfg)
         processed_files.append(file.name_old)
 
     if not cfg.verbose and processed_files:
-        print(f"{cfg.terminal_clear}{cfg.indent}Done.")
+        print(f"{terminal_clear}{indent}Done.")
     if not processed_files and not cfg.quiet:
-        print(f"{cfg.indent}No files were processed.")
+        print(f"{indent}No files were processed.")
     if (cfg.verbose or cfg.show_errors) and skipped_files:
-        print_file_errors(media_list)
+        print_file_errors(media_list, cfg)
     folder_info["processed_files"] = processed_files
     folder_info["skipped_files"] = skipped_files
     folder_info["created_dirs"] = created_dirs
 
 
 def main() -> None:
-    global cfg
+    # TyConf config initialization
     cfg = init_config()
-    parse_args()
+
+    # Argument parsing
+    parse_args(cfg)
+
+    # Config freezing
     cfg.freeze()
-    check_conditions()
-    print_header()
-    file_list = get_file_list(cfg.source_dir)
-    folder_info = get_folder_info(file_list)
-    print_folder_info(folder_info)
-    files = get_media_objects(file_list, folder_info)
-    print_files_info(files, folder_info)
+
+    # Condition checks
+    check_conditions(cfg)
+
+    # Print header
+    print_header(cfg)
+
+    # Main processing
+    source_dir = cast(Path, cfg.source_dir)
+    file_list = get_file_list(source_dir)
+    folder_info = get_folder_info(file_list, cfg)
+    print_folder_info(folder_info, cfg)
+    files = get_media_objects(file_list, folder_info, cfg)
+    print_files_info(files, folder_info, cfg)
+
     if folder_info["valid_files"] == 0:
         print("No valid media files to process. Exiting.")
         sys.exit(0)
-    if not prompt_user(folder_info):
+
+    if not prompt_user(folder_info, cfg):
         sys.exit(0)
-    process_files(files, folder_info)
-    print_footer(folder_info)
+
+    process_files(files, folder_info, cfg)
+
+    # Print footer
+    print_footer(folder_info, cfg)
 
 
 if __name__ == "__main__":
