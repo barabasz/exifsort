@@ -10,9 +10,9 @@
 ✅ **Extension Normalization**: Automatically unifies file extensions to lowercase standard formats (e.g., converts `.JPEG` to `.jpg`, `.TIFF` to `.tif`).  
 ✅ **Time Correction**: Apply a time offset (in seconds) to fix timestamps if your camera's clock was set incorrectly.  
 ✅ **Safe & Secure**:  
- -  **Dry-run mode (`--test`)**: Preview changes without modifying any files.  
- -  **Conflict protection**: Skips files if the target destination already exists (unless overwrite is forced).  
- -  **Fallback handling**: Files without metadata are safely moved to a dedicated `_UNKNOWN` folder.  
+→ **Dry-run mode (`--test`)**: Preview changes without modifying any files.  
+→  **Conflict protection**: Skips files if the target destination already exists (unless overwrite is forced).  
+→  **Fallback handling**: Files without metadata are safely moved to a dedicated `_UNKNOWN` folder.  
 ✅ **CLI Friendly**: Includes a progress bar, colorful output, and verbose mode for detailed processing logs.  
 
 ## Installation
