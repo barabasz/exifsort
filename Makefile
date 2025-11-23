@@ -89,7 +89,7 @@ check-tools:
 	@$(CHECK_ECHO) "$(GREEN)✅ All tools checked$(NC)"
 
 dev-install: check-tools
-	@echo "$(BLUE)📦 Installing TyConf in development mode...$(NC)"
+	@echo "$(BLUE)📦 Installing ExifSort in development mode...$(NC)"
 	$(PYTHON) -m pip install --upgrade pip
 	pip install -e ".[dev,toml]"
 	@echo "$(GREEN)✅ Development installation complete$(NC)"
@@ -198,8 +198,8 @@ release: check-tools format lint typecheck test clean build check-dist
 	@echo "$(GREEN)🎊 Release v$(VERSION) completed!$(NC)"
 	@echo ""
 	@echo "$(BLUE)Next steps:$(NC)"
-	@echo "  1. Check PyPI: https://pypi.org/project/tyconf/"
-	@echo "  2. Verify GitHub release: https://github.com/barabasz/tyconf/releases"
+	@echo "  1. Check PyPI: https://pypi.org/project/exifsort/"
+	@echo "  2. Verify GitHub release: https://github.com/barabasz/exifsort/releases/new"
 	@echo "  3. Update documentation if needed"
 
 .DEFAULT_GOAL := help
