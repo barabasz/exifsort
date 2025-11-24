@@ -5,7 +5,18 @@ All notable changes to [ExifSort](https://github.com/barabasz/exifsort) will be 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.2] - 2025-11-22
+## [0.2.4] - 2025-11-24
+
+### Changed
+- Script optimization and bug fixes
+
+## [0.2.3] - 2025-11-24
+
+### Changed
+- New project organization (models.py and print.py modules)
+- Setting project metadata directly from pyproject.toml
+
+## [0.2.2] - 2025-11-23
 
 ### Added
 - Some basic tests for pytest
@@ -36,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History Summary
 
+- **0.2.4** (2025-11-24) - Script optimization and bug fixes
+- **0.2.3** (2025-11-24) - New project organization
 - **0.2.2** (2025-11-23) - New project organization and basic tests
 - **0.2.0** (2025-11-22) - Output colorization for better UX
 - **0.1.5** (2025-10-20) - Configuration via TyConf and ArgParse

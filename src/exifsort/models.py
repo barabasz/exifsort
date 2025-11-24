@@ -99,7 +99,7 @@ class AppConfig:
     """Application configuration with default values."""
 
     # Settings
-    extensions: tuple[str, ...] = ("jpg", "jpeg", "dng", "mov", "mp4", "orf", "ori", "raw")
+    extensions: tuple[str, ...] = ("jpg", "jpeg", "heic", "dng", "mov", "mp4", "orf", "ori", "raw")
     change_extensions: dict[str, str] = field(
         default_factory=lambda: {"jpeg": "jpg", "tiff": "tif"}
     )
