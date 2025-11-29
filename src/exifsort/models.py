@@ -120,11 +120,13 @@ class AppConfig:
     time_day_starts: str = "04:00:00"
 
     # Flags & Values
+    check_mode: bool = False
     normalize_ext: bool = True
     offset: int = 0
     overwrite: bool = False
     quiet: bool = False
     show_version: bool = False
+    show_templates: bool = False
     show_files_details: bool = False
     show_errors: bool = False
     show_settings: bool = False
@@ -211,6 +213,12 @@ class FileItem:
         return True
 
     def _process_exif(self) -> None:
+        # Initialize attributes to None in case of early return
+        self.exif_date = None
+        self.date_time = None
+        self.exif_type = None
+        self.type = "unknown"
+
         if self.metadata is None:
             self.error = "Metadata not provided or could not be read."
             self.is_valid = False
@@ -249,7 +257,7 @@ class FileItem:
         if not self.cfg.use_subdirs:
             return None
 
-        if self.exif_date is None:
+        if self.exif_date is None or self.date_time is None:
             return self.cfg.fallback_folder
 
         h, m, s = map(int, self.cfg.time_day_starts.split(":"))
@@ -263,13 +271,44 @@ class FileItem:
             return target_date.strftime("%Y%m%d")
         elif self.cfg.directory_template == "YYYY-MM-DD":
             return target_date.strftime("%Y-%m-%d")
+        elif self.cfg.directory_template == "YYYY.MM.DD":
+            return target_date.strftime("%Y.%m.%d")
+        elif self.cfg.directory_template == "YYYY_MM_DD":
+            return target_date.strftime("%Y_%m_%d")
+        elif self.cfg.directory_template == "YYYY-MM":
+            return target_date.strftime("%Y-%m")
+        elif self.cfg.directory_template == "YYYY/MM/DD":
+            return target_date.strftime("%Y/%m/%d")
+        elif self.cfg.directory_template == "YYYY/MM":
+            return target_date.strftime("%Y/%m")
         else:
             return target_date.strftime("%Y%m%d")
 
     def get_prefix(self) -> str:
+        # This function is only called when exif_date is not None,
+        # which means date_time should also be set
+        assert self.date_time is not None, "date_time should be set when get_prefix is called"
+
         if self.cfg.file_template == "YYYYMMDD-HHMMSS":
             return self.date_time.strftime("%Y%m%d-%H%M%S")
-        return self.date_time.strftime("%Y%m%d-%H%M%S")
+        elif self.cfg.file_template == "YYYY-MM-DD-HH-MM-SS":
+            return self.date_time.strftime("%Y-%m-%d-%H-%M-%S")
+        elif self.cfg.file_template == "YYYY.MM.DD.HH.MM.SS":
+            return self.date_time.strftime("%Y.%m.%d.%H.%M.%S")
+        elif self.cfg.file_template == "YYYYMMDD_HHMMSS":
+            return self.date_time.strftime("%Y%m%d_%H%M%S")
+        elif self.cfg.file_template == "YYYYMMDD":
+            return self.date_time.strftime("%Y%m%d")
+        elif self.cfg.file_template == "YYYY-MM-DD":
+            return self.date_time.strftime("%Y-%m-%d")
+        elif self.cfg.file_template == "HHMMSS":
+            return self.date_time.strftime("%H%M%S")
+        elif self.cfg.file_template == "YYYYMMDDHHMM":
+            return self.date_time.strftime("%Y%m%d%H%M")
+        elif self.cfg.file_template == "YYYY-MM-DD_HH-MM-SS":
+            return self.date_time.strftime("%Y-%m-%d_%H-%M-%S")
+        else:
+            return self.date_time.strftime("%Y%m%d-%H%M%S")
 
     def get_exif_date(self) -> datetime.datetime | None:
         if not self.metadata:
@@ -320,3 +359,39 @@ class FileItem:
     def get_new_extension(self) -> str:
         ext = self.ext_old.lower() if self.cfg.normalize_ext else self.ext_old
         return self.cfg.change_extensions.get(ext, ext)
+
+    def get_unique_path(self, base_path: Path) -> Path:
+        """
+        Generate a unique file path by adding _1, _2, etc. suffix if file exists.
+        Only applies to files going to fallback folder.
+
+        Args:
+            base_path: The original target path
+
+        Returns:
+            Unique path that doesn't conflict with existing files
+        """
+        # Only apply unique naming for fallback folder
+        if self.subdir != self.cfg.fallback_folder:
+            return base_path
+
+        if not base_path.exists():
+            return base_path
+
+        # Extract stem and extension
+        stem = base_path.stem
+        ext = base_path.suffix
+        parent = base_path.parent
+
+        # Try adding _1, _2, _3, etc. until we find a unique name
+        counter = 1
+        while True:
+            new_path = parent / f"{stem}_{counter}{ext}"
+            if not new_path.exists():
+                # Update internal state to reflect the new unique name
+                self.name_new = new_path.name
+                return new_path
+            counter += 1
+            # Safety limit to prevent infinite loop
+            if counter > 9999:
+                raise RuntimeError(f"Could not generate unique filename after {counter} attempts")

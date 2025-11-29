@@ -52,6 +52,13 @@ def check_conditions(cfg: AppConfig) -> None:
         )
         printe(msg, 0)
 
+    # Show templates and exit when requested with --templates
+    if cfg.show_templates:
+        from exifsort.print import print_templates
+
+        print_templates()
+        sys.exit(0)
+
     # Exit if source directory does not exist or is not writable
     if not cfg.source_dir.is_dir():
         printe(
@@ -103,26 +110,45 @@ def get_media_objects(
     media_objects = []
 
     # Run ExifTool once for all files to improve performance
-    with exiftool.ExifToolHelper() as et:
-        for item, file in enumerate(media_files, start=1):
-            metadata = None
-            try:
-                data = et.get_metadata(str(file))
-                if data:
-                    metadata = data[0]
-            except Exception:
+    try:
+        with exiftool.ExifToolHelper() as et:
+            for item, file in enumerate(media_files, start=1):
                 metadata = None
+                try:
+                    data = et.get_metadata(str(file))
+                    if data:
+                        metadata = data[0]
+                except Exception as e:
+                    # Log individual file errors but continue processing
+                    if cfg.verbose:
+                        print(
+                            f"\n{cfg.indent}Warning: Could not read metadata from {file.name}: {str(e)}"
+                        )
+                    metadata = None
 
-            media_item = FileItem(file, cfg, metadata)
+                media_item = FileItem(file, cfg, metadata)
 
-            if cfg.show_files_details and not cfg.quiet:
-                print_file_info(media_item, cfg)
-            else:
-                print_progress(item, media_count, colorize(media_item.name_old, colors.cyan), cfg)
+                if cfg.show_files_details and not cfg.quiet:
+                    print_file_info(media_item, cfg)
+                else:
+                    print_progress(
+                        item, media_count, colorize(media_item.name_old, colors.cyan), cfg
+                    )
 
-            media_objects.append(media_item)
+                media_objects.append(media_item)
 
-    if not cfg.show_files_details:
+    except Exception as e:
+        # Handle critical ExifTool errors
+        print(f"\n{colorize('Error:', colors.red)} ExifTool failed: {str(e)}")
+        print(f"{cfg.indent}Attempting to continue without metadata...")
+
+        # If ExifTool completely fails, create FileItems without metadata
+        for file in media_files:
+            if not any(obj.path_old == file for obj in media_objects):
+                media_item = FileItem(file, cfg, metadata=None)
+                media_objects.append(media_item)
+
+    if not cfg.show_files_details and not cfg.quiet:
         print(f"{cfg.terminal_clear}{cfg.indent}Completed.")
 
     return media_objects
@@ -172,14 +198,20 @@ def process_files(media_list: list[FileItem], folder_info: dict[str, Any], cfg: 
         if cfg.use_subdirs and file.subdir:
             target_dir = cfg.source_dir / file.subdir
 
-            if not target_dir.exists() and not cfg.test:
+            if not cfg.test:
                 target_dir.mkdir(parents=True, exist_ok=True)
-                created_dirs.append(file.subdir)
+                if file.subdir not in created_dirs:
+                    created_dirs.append(file.subdir)
 
+        # Handle file conflicts
         if file.path_new.exists() and not cfg.overwrite:
-            file.error = "Target file already exists."
-            skipped_files.append(file.name_old)
-            continue
+            # For fallback folder, generate unique name instead of skipping
+            if file.subdir == cfg.fallback_folder:
+                file.path_new = file.get_unique_path(file.path_new)
+            else:
+                file.error = "Target file already exists."
+                skipped_files.append(file.name_old)
+                continue
 
         if not cfg.test:
             try:
@@ -203,6 +235,75 @@ def process_files(media_list: list[FileItem], folder_info: dict[str, Any], cfg: 
     folder_info["created_dirs"] = created_dirs
 
 
+def check_files(
+    media_list: list[FileItem], folder_info: dict[str, Any], cfg: AppConfig
+) -> dict[str, list[tuple[str, str]]]:
+    """
+    Check files for issues without moving them.
+
+    Returns a dictionary with issue categories and affected files:
+    {
+        "no_exif": [(filename, reason), ...],
+        "empty": [(filename, reason), ...],
+        "non_media": [(filename, reason), ...],
+    }
+    """
+    issues: dict[str, list[tuple[str, str]]] = {
+        "no_exif": [],
+        "empty": [],
+        "non_media": [],
+        "not_readable": [],
+        "not_writable": [],
+    }
+
+    total_items = len(media_list)
+
+    print(f"{colorize('Checking files:', colors.yellow)}")
+
+    # Media type patterns
+    audio_video_types = ["audio", "video"]
+
+    for item, file in enumerate(media_list, start=1):
+        if not cfg.quiet:
+            print_progress(item, total_items, colorize(file.name_old, colors.cyan), cfg)
+
+        # Check if file is empty
+        if file.path_old.exists() and file.path_old.stat().st_size == 0:
+            issues["empty"].append((file.name_old, "File is empty (0 bytes)"))
+            continue
+
+        # Check if file is not readable
+        if file.path_old.exists() and not os.access(file.path_old, os.R_OK):
+            issues["not_readable"].append((file.name_old, "File is not readable"))
+            continue
+
+        # Check if file is not writable
+        if file.path_old.exists() and not os.access(file.path_old, os.W_OK):
+            issues["not_writable"].append((file.name_old, "File is not writable"))
+            continue
+
+        # Check if file has no EXIF date
+        if not file.is_valid or file.exif_date is None:
+            # Check if it's audio/video (which might not have EXIF)
+            if hasattr(file, "type") and file.type in audio_video_types:
+                # Audio/video without EXIF is acceptable, but note it
+                pass
+            else:
+                reason = file.error if file.error else "No EXIF date found"
+                issues["no_exif"].append((file.name_old, reason))
+                continue
+
+        # Check if file is not audio/video but lacks proper EXIF
+        if hasattr(file, "type") and file.type not in audio_video_types and file.type == "unknown":
+            issues["non_media"].append((file.name_old, "File type could not be determined"))
+
+    if not cfg.quiet:
+        print(f"{cfg.terminal_clear}{cfg.indent}Completed.")
+
+    folder_info["issues"] = issues
+    return issues
+
+
 def main() -> None:
     """Main function to run the EXIF sorting process."""
     # Get configuration (from args module)
@@ -218,6 +319,14 @@ def main() -> None:
 
     files = get_media_objects(file_list, folder_info, cfg)
     print_files_info(files, folder_info, cfg)
+
+    # Check mode: validate files and report issues
+    if cfg.check_mode:
+        issues = check_files(files, folder_info, cfg)
+        from exifsort.print import print_check_results
+
+        print_check_results(issues, cfg)
+        sys.exit(0)
 
     if folder_info["valid_files"] == 0:
         print("No valid media files to process. Exiting.")

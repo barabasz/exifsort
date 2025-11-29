@@ -37,6 +37,54 @@ def get_elapsed_time(start_time: float) -> tuple[str, str]:
     return f"{elapsed_time:.2f}", time_factor
 
 
+def print_templates() -> None:
+    """Print all available directory and file templates with examples."""
+    indent = "  "
+
+    print(f"\n{colorize('Available Templates', colors.green)}\n")
+
+    # Directory templates
+    print(f"{colorize('Directory Templates (-d, --directory-template):', colors.yellow)}")
+    dir_templates = [
+        ("YYYYMMDD", "20240115", "Compact format (default)"),
+        ("YYYY-MM-DD", "2024-01-15", "ISO format with dashes"),
+        ("YYYY.MM.DD", "2024.01.15", "Format with dots"),
+        ("YYYY_MM_DD", "2024_01_15", "Format with underscores"),
+        ("YYYY-MM", "2024-01", "Monthly folders"),
+        ("YYYY/MM/DD", "2024/01/15", "Nested year/month/day"),
+        ("YYYY/MM", "2024/01", "Nested year/month"),
+    ]
+
+    for template, example, description in dir_templates:
+        template_str = colorize(f"{template:<20}", colors.cyan)
+        example_str = colorize(f"{example:<20}", colors.green)
+        print(f"{indent}{template_str} → {example_str} {description}")
+
+    print(f"\n{colorize('File Prefix Templates (-f, --file-template):', colors.yellow)}")
+    file_templates = [
+        ("YYYYMMDD-HHMMSS", "20240115-143045", "Compact date-time (default)"),
+        ("YYYY-MM-DD-HH-MM-SS", "2024-01-15-14-30-45", "Full format with dashes"),
+        ("YYYY.MM.DD.HH.MM.SS", "2024.01.15.14.30.45", "Full format with dots"),
+        ("YYYYMMDD_HHMMSS", "20240115_143045", "Underscore separator"),
+        ("YYYYMMDD", "20240115", "Date only (no time)"),
+        ("YYYY-MM-DD", "2024-01-15", "Date only with dashes"),
+        ("HHMMSS", "143045", "Time only (use with date folders)"),
+        ("YYYYMMDDHHMM", "202401151430", "Without seconds (shorter)"),
+        ("YYYY-MM-DD_HH-MM-SS", "2024-01-15_14-30-45", "Mixed separators"),
+    ]
+
+    for template, example, description in file_templates:
+        template_str = colorize(f"{template:<25}", colors.cyan)
+        example_str = colorize(f"{example:<25}", colors.green)
+        print(f"{indent}{template_str} → {example_str} {description}")
+
+    print(f"\n{colorize('Example Usage:', colors.yellow)}")
+    print(
+        f"{indent}exifsort -d {colorize('YYYY-MM-DD', colors.cyan)} -f {colorize('HHMMSS', colors.cyan)} /path/to/photos"
+    )
+    print(f"{indent}Results in: {colorize('2024-01-15/143045-photo.jpg', colors.green)}\n")
+
+
 def print_schema(cfg: AppConfig) -> None:
     """Print the schema based on current configuration."""
     print(f"{colorize('Schema:', colors.yellow)}")
@@ -209,3 +257,58 @@ def print_process_file(file: FileItem, item: int, total_items: int, cfg: AppConf
         print(f"{cfg.indent}{old} ({colorize(str(exf), exf_color)}) {arr} {sub}{new}")
     else:
         print_progress(item, total_items, colorize(file.name_old, colors.cyan), cfg)
+
+
+def print_check_results(issues: dict[str, list[tuple[str, str]]], cfg: AppConfig) -> None:
+    """Print results of file check mode."""
+    print(f"{colorize('Invalid files:', colors.yellow)}")
+
+    # Count total issues
+    total_issues = sum(len(file_list) for file_list in issues.values())
+
+    if total_issues == 0:
+        print(f"{cfg.indent}{colorize('No issues found!', colors.green)} All files are valid.")
+        return
+
+    # Print summary
+    print(f"{cfg.indent}Found {colorize(str(total_issues), colors.red)} issue(s) in total:\n")
+
+    # Print files with no EXIF data
+    if issues["no_exif"]:
+        count = len(issues["no_exif"])
+        print(f"{cfg.indent}{colorize(f'Files without EXIF date ({count}):', colors.yellow)}")
+        for filename, reason in issues["no_exif"]:
+            print(f"{cfg.indent}{cfg.indent}{colorize(filename, colors.cyan)}: {reason}")
+        print()
+
+    # Print empty files
+    if issues["empty"]:
+        count = len(issues["empty"])
+        print(f"{cfg.indent}{colorize(f'Empty files ({count}):', colors.yellow)}")
+        for filename, reason in issues["empty"]:
+            print(f"{cfg.indent}{cfg.indent}{colorize(filename, colors.cyan)}: {reason}")
+        print()
+
+    # Print non-media files
+    if issues["non_media"]:
+        count = len(issues["non_media"])
+        print(f"{cfg.indent}{colorize(f'Non-media files ({count}):', colors.yellow)}")
+        for filename, reason in issues["non_media"]:
+            print(f"{cfg.indent}{cfg.indent}{colorize(filename, colors.cyan)}: {reason}")
+        print()
+
+    # Print not readable files
+    if issues["not_readable"]:
+        count = len(issues["not_readable"])
+        print(f"{cfg.indent}{colorize(f'Files not readable ({count}):', colors.yellow)}")
+        for filename, reason in issues["not_readable"]:
+            print(f"{cfg.indent}{cfg.indent}{colorize(filename, colors.cyan)}: {reason}")
+        print()
+
+    # Print not writable files
+    if issues["not_writable"]:
+        count = len(issues["not_writable"])
+        print(f"{cfg.indent}{colorize(f'Files not writable ({count}):', colors.yellow)}")
+        for filename, reason in issues["not_writable"]:
+            print(f"{cfg.indent}{cfg.indent}{colorize(filename, colors.cyan)}: {reason}")
+        print()

@@ -139,6 +139,13 @@ def get_config() -> AppConfig:
         help="Overwrite existing files during move/rename operation",
     )
     parser.add_argument(
+        "-c",
+        "--check",
+        dest="check_mode",
+        action="store_true",
+        help="Check mode: validate files and report issues without moving them",
+    )
+    parser.add_argument(
         "-p",
         "--no-prefix",
         dest="use_prefix",
@@ -186,6 +193,13 @@ def get_config() -> AppConfig:
         "-v", "--version", dest="show_version", action="store_true", help="Print version and exit"
     )
     parser.add_argument(
+        "-T",
+        "--templates",
+        dest="show_templates",
+        action="store_true",
+        help="Show available directory and file templates and exit",
+    )
+    parser.add_argument(
         "-V",
         "--verbose",
         dest="verbose",
@@ -222,8 +236,10 @@ def get_config() -> AppConfig:
         normalize_ext=args.normalize_ext,
         offset=args.offset,
         overwrite=args.overwrite,
+        check_mode=args.check_mode,
         quiet=args.quiet,
         show_version=args.show_version,
+        show_templates=args.show_templates,
         show_files_details=args.show_files_details,
         show_errors=args.show_errors,
         show_settings=args.show_settings,

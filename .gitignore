@@ -136,6 +136,7 @@ dmypy.json
 cython_debug/
 
 # IDEs
+CLAUDE.md
 .vscode/
 .idea/
 *.swp
