@@ -365,7 +365,7 @@ def test_process_files_handles_rename_error(base_config):
         process_files([file_item], folder_info, base_config)
 
         assert folder_info["skipped_files"] == ["test.jpg"]
-        assert "Error moving file" in file_item.error
+        assert "File system error" in file_item.error or "Permission denied" in file_item.error
 
 
 def test_process_files_rename_in_place(base_config):

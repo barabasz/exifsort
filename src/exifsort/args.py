@@ -219,6 +219,24 @@ def get_config() -> AppConfig:
 
     args = parser.parse_args()
 
+    # Validate time_day_starts format
+    try:
+        time_parts = args.time_day_starts.split(":")
+        if len(time_parts) != 3:
+            raise ValueError("Must be in HH:MM:SS format")
+        h, m, s = map(int, time_parts)
+        if not (0 <= h <= 23 and 0 <= m <= 59 and 0 <= s <= 59):
+            raise ValueError("Invalid time values (hours: 0-23, minutes/seconds: 0-59)")
+    except ValueError as e:
+        print(
+            f"{colorize('Error', colors.red)}: Invalid time format for --new-day: {args.time_day_starts}"
+        )
+        print("       Expected format: HH:MM:SS (e.g., 04:00:00)")
+        print(f"       {str(e)}")
+        import sys
+
+        sys.exit(1)
+
     # Process extensions (remove dots, lowercase)
     extensions = tuple(ext.lower().lstrip(".") for ext in args.extensions)
 

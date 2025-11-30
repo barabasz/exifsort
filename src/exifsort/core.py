@@ -14,7 +14,7 @@ from typing import Any
 import exiftool
 
 from exifsort.args import get_config
-from exifsort.models import AppConfig, FileItem, colorize, colors
+from exifsort.models import AppConfig, FileItem, colorize, colors, get_normalized_extension
 from exifsort.print import (
     print_file_errors,
     print_file_info,
@@ -26,6 +26,19 @@ from exifsort.print import (
     print_progress,
     printe,
 )
+
+
+def skip_file_with_error(file: FileItem, error: str, skipped_files: list[str]) -> None:
+    """
+    Mark file as skipped with error message.
+
+    Args:
+        file: FileItem to mark as skipped
+        error: Error message to set
+        skipped_files: List to append filename to
+    """
+    file.error = error
+    skipped_files.append(file.name_old)
 
 
 def check_exiftool_availability() -> None:
@@ -104,7 +117,7 @@ def get_media_objects(
     print(f"{colorize('Analyzing files:', colors.yellow)}")
 
     # Filter media files by extension
-    media_files = [f for f in file_list if f.suffix.lstrip(".").lower() in cfg.extensions]
+    media_files = [f for f in file_list if get_normalized_extension(f) in cfg.extensions]
 
     # Process files with progress
     media_objects = []
@@ -171,14 +184,14 @@ def get_folder_info(file_list: list[Path], cfg: AppConfig) -> dict[str, Any]:
             "%Y-%m-%d %H:%M:%S"
         ),
         "file_count": len(file_list),
-        "media_count": sum(1 for f in file_list if f.suffix.lstrip(".").lower() in cfg.extensions),
+        "media_count": sum(1 for f in file_list if get_normalized_extension(f) in cfg.extensions),
         "media_types": {},
         "processed_files": [],
         "skipped_files": [],
         "created_dirs": [],
     }
     for f in file_list:
-        ext = f.suffix.lstrip(".").lower()
+        ext = get_normalized_extension(f)
         if ext in cfg.extensions:
             info["media_types"][ext] = info["media_types"].get(ext, 0) + 1
     return info
@@ -186,9 +199,9 @@ def get_folder_info(file_list: list[Path], cfg: AppConfig) -> dict[str, Any]:
 
 def process_files(media_list: list[FileItem], folder_info: dict[str, Any], cfg: AppConfig) -> None:
     """Process and move/rename media files based on EXIF data."""
-    processed_files = []
-    skipped_files = []
-    created_dirs = []
+    processed_files: list[str] = []
+    skipped_files: list[str] = []
+    created_dirs: list[str] = []
     total_items = folder_info["valid_files"]
     action = "Moving" if cfg.use_subdirs else "Renaming"
 
@@ -199,26 +212,59 @@ def process_files(media_list: list[FileItem], folder_info: dict[str, Any], cfg: 
             target_dir = cfg.source_dir / file.subdir
 
             if not cfg.test:
-                target_dir.mkdir(parents=True, exist_ok=True)
-                if file.subdir not in created_dirs:
-                    created_dirs.append(file.subdir)
+                try:
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    if file.subdir not in created_dirs:
+                        created_dirs.append(file.subdir)
+                except PermissionError:
+                    skip_file_with_error(
+                        file,
+                        f"Permission denied: cannot create directory '{file.subdir}'.",
+                        skipped_files,
+                    )
+                    continue
+                except OSError as e:
+                    skip_file_with_error(
+                        file, f"Error creating directory '{file.subdir}': {str(e)}", skipped_files
+                    )
+                    continue
 
         # Handle file conflicts
         if file.path_new.exists() and not cfg.overwrite:
             # For fallback folder, generate unique name instead of skipping
             if file.subdir == cfg.fallback_folder:
-                file.path_new = file.get_unique_path(file.path_new)
+                try:
+                    file.path_new = file.get_unique_path(file.path_new)
+                except RuntimeError as e:
+                    skip_file_with_error(
+                        file, f"Unable to generate unique filename: {str(e)}", skipped_files
+                    )
+                    continue
             else:
-                file.error = "Target file already exists."
-                skipped_files.append(file.name_old)
+                skip_file_with_error(file, "Target file already exists.", skipped_files)
                 continue
 
         if not cfg.test:
             try:
                 file.path_old.rename(file.path_new)
+            except PermissionError:
+                skip_file_with_error(
+                    file, "Permission denied: cannot move or rename file.", skipped_files
+                )
+                continue
+            except FileNotFoundError:
+                skip_file_with_error(file, "Source file no longer exists.", skipped_files)
+                continue
+            except FileExistsError:
+                skip_file_with_error(
+                    file, "Target file already exists (race condition).", skipped_files
+                )
+                continue
+            except OSError as e:
+                skip_file_with_error(file, f"File system error: {str(e)}", skipped_files)
+                continue
             except Exception as e:
-                file.error = f"Error moving file: {str(e)}"
-                skipped_files.append(file.name_old)
+                skip_file_with_error(file, f"Unexpected error moving file: {str(e)}", skipped_files)
                 continue
 
         print_process_file(file, item, total_items, cfg)
